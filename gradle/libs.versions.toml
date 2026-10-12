@@ -13,6 +13,7 @@ junit = "4.13.2"
 kotlinxSerialization = "1.7.3"
 coroutines = "1.9.0"
 okhttp = "4.12.0"
+nanohttpd = "2.3.1"
 work = "2.10.0"
 datastore = "1.1.1"
 

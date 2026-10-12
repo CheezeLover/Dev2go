@@ -4,7 +4,35 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+/**
+ * Bundles the arm64 opencode binary when one has been built.
+ *
+ * scripts/build-agent.sh produces dist/opencode-arm64. It is ~192 MB, so it is not
+ * required to build: without it the app still runs, and the agent can be imported from
+ * device storage instead. Tying it to a file that may or may not exist keeps a fresh
+ * clone buildable without a 192 MB prerequisite, while a release build that has run the
+ * script ships fully self-contained.
+ *
+ * Staged into a generated directory rather than pointed at dist/ directly — that directory
+ * also holds the signed APK, and assets.srcDir would happily bundle the APK inside itself.
+ */
+val agentAssetStage = layout.buildDirectory.dir("generated/agentAssets")
+val bundledAgent = rootProject.file("dist/opencode-arm64")
+
+// No onlyIf predicate: capturing a script-level File in a task predicate breaks the
+// configuration cache, and `from` on a missing file is already a no-op.
+val stageAgentBinary by tasks.registering(Copy::class) {
+    from(bundledAgent)
+    into(agentAssetStage)
+}
+
 android {
+    sourceSets.getByName("main") {
+        // builtBy is required, not decorative: Gradle validates that a task consuming this
+        // directory declares the dependency, and lint's report model fails the build
+        // otherwise.
+        assets.srcDir(files(agentAssetStage).builtBy(stageAgentBinary))
+    }
     namespace = "com.dev2go"
     // 35, matching AGP 8.7.3. Compiling against 36 needs a newer AGP than the version
     // pinned here, and nothing in the app uses an API 36 feature.
@@ -89,6 +117,7 @@ dependencies {
     implementation(project(":core"))
 
     implementation(libs.androidx.core.ktx)
+    implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)

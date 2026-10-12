@@ -7,9 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,192 +15,160 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dev2go.agent.AgentProcess
+import com.dev2go.agent.AgentState
+import com.dev2go.runtime.LlmServer
+import com.dev2go.runtime.OllamaFacade
+import com.dev2go.runtime.ServerState
 import com.dev2go.ui.theme.Ground
 import com.dev2go.ui.theme.Negative
-import com.dev2go.ui.theme.Outline
 import com.dev2go.ui.theme.Positive
 import com.dev2go.ui.theme.SurfaceHigh
 import com.dev2go.ui.theme.TextFaint
 import com.dev2go.ui.theme.TextPrimary
 import com.dev2go.ui.theme.TextSecondary
 
-/**
- * Test harness for the on-device LLM runtime.
- *
- * This is not the agent UI. It exists to answer one question on real hardware that no
- * amount of x86-64 testing can: does the embedded llama.cpp server load a GGUF off phone
- * storage, bind a port, and answer a request. Everything here is in service of that.
- */
+/** Where the agent, the model runtime and the Ollama facade each stand. */
 @Composable
-fun RuntimeScreen(viewModel: RuntimeViewModel) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
-
-    Scaffold(containerColor = Ground) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Column {
-                Text("Dev2go", color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+fun RuntimeScreen(viewModel: AppViewModel, state: UiState) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(Ground)
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        SectionCard("Native runtime") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                StatusDot(if (viewModel.nativeAvailable) Positive else Negative)
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    "on-device LLM runtime — test harness",
-                    color = TextFaint,
-                    fontSize = 13.sp,
+                    if (viewModel.nativeAvailable) "libdev2go.so loaded" else "unavailable",
+                    color = TextPrimary,
+                    fontSize = 14.sp,
+                )
+            }
+            KeyValue("ABIs", viewModel.abis)
+            KeyValue("Threads", LlmServer.recommendedThreads().toString())
+            viewModel.backend?.let { KeyValue("llama.cpp", it) }
+            viewModel.nativeError?.let { KeyValue("Error", it, Negative) }
+        }
+
+        SectionCard("Agent") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                StatusDot(
+                    when (val a = state.agentState) {
+                        is AgentState.Running -> Positive
+                        is AgentState.Failed -> Negative
+                        is AgentState.Starting -> TextSecondary
+                        AgentState.Absent -> TextFaint
+                    }
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    when (val a = state.agentState) {
+                        is AgentState.Running -> "running on ${a.baseUrl}"
+                        is AgentState.Failed -> a.reason
+                        is AgentState.Starting -> "starting…"
+                        AgentState.Absent -> "stopped"
+                    },
+                    color = TextPrimary,
+                    fontSize = 14.sp,
                 )
             }
 
-            Section("Runtime") {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Dot(if (viewModel.nativeAvailable) Positive else Negative)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        if (viewModel.nativeAvailable) "libdev2go.so loaded" else "native runtime unavailable",
-                        color = TextPrimary,
-                        fontSize = 14.sp,
-                    )
-                }
-                KeyValue("ABIs", viewModel.abis)
-                KeyValue("Threads", "${viewModel.threads}")
-                viewModel.backend?.let { KeyValue("llama.cpp", it) }
-                viewModel.nativeError?.let { KeyValue("Error", it, Negative) }
+            if (!viewModel.agentInstalled) {
+                Text(
+                    "No opencode binary for this device yet. Build one with scripts/build-agent.sh " +
+                        "and install it from the Models tab, or drop opencode-arm64 into the app's files.",
+                    color = TextFaint,
+                    fontSize = 11.sp,
+                )
             }
 
-            Section("Model") {
-                if (state.imported.isEmpty()) {
-                    Text(
-                        "No model yet. Pick a GGUF — it is copied into app storage so it stays " +
-                            "after the picker closes. Nothing leaves the device and no storage " +
-                            "permission is requested.",
-                        color = TextSecondary,
-                        fontSize = 13.sp,
-                    )
-                } else {
-                    state.imported.forEach { file ->
-                        val selected = file.name == state.selected?.name
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    if (selected) SurfaceHigh else Color.Transparent,
-                                    RoundedCornerShape(8.dp),
-                                )
-                                .padding(vertical = 8.dp, horizontal = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(file.name, color = TextPrimary, fontSize = 14.sp)
-                                Text(
-                                    "%.1f MB".format(file.length() / 1_048_576.0),
-                                    color = TextFaint,
-                                    fontSize = 12.sp,
-                                )
-                            }
-                            OutlinedButton(
-                                onClick = { viewModel.select(file) },
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary),
-                            ) { Text(if (selected) "Selected" else "Select", fontSize = 12.sp) }
-                        }
-                    }
-                }
-                Spacer(Modifier.height(4.dp))
+            KeyValue("Port", AgentProcess.DEFAULT_PORT.toString())
+            KeyValue("Auth", "HTTP Basic — password generated per launch")
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(
-                    onClick = viewModel.pickModel,
+                    onClick = { viewModel.startAgent() },
+                    enabled = state.agentState !is AgentState.Running && viewModel.agentInstalled,
                     colors = ButtonDefaults.buttonColors(containerColor = SurfaceHigh, contentColor = TextPrimary),
-                ) { Text("Pick a GGUF…", fontSize = 14.sp) }
+                ) { Text("Start agent", fontSize = 13.sp) }
+                OutlinedButton(
+                    onClick = { viewModel.stopAgent() },
+                    enabled = state.agentState is AgentState.Running,
+                ) { Text("Stop", fontSize = 13.sp) }
             }
+        }
 
-            Section("Server") {
-                when (val s = state.server) {
-                    is com.dev2go.runtime.ServerState.Idle -> Text("stopped", color = TextFaint, fontSize = 13.sp)
-                    is com.dev2go.runtime.ServerState.Starting ->
-                        Text("loading ${s.model}…", color = TextSecondary, fontSize = 13.sp)
-                    is com.dev2go.runtime.ServerState.Running -> {
-                        KeyValue("Model", s.model, Positive)
-                        KeyValue("OpenAI-compatible", s.baseUrl + "/v1", Positive)
-                        Text("/v1/models", color = TextFaint, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                        Text(
-                            s.modelsJson.take(400),
-                            color = TextSecondary,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace,
-                        )
+        SectionCard("Model runtime") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                StatusDot(
+                    when (state.llmState) {
+                        is ServerState.Running -> Positive
+                        is ServerState.Failed -> Negative
+                        is ServerState.Starting -> TextSecondary
+                        ServerState.Idle -> TextFaint
                     }
-                    is com.dev2go.runtime.ServerState.Failed ->
-                        Text(s.reason, color = Negative, fontSize = 13.sp)
-                }
-                Spacer(Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = { viewModel.start() },
-                        enabled = state.selected != null && !state.busy,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = SurfaceHigh,
-                            contentColor = TextPrimary,
-                            disabledContainerColor = SurfaceHigh,
-                            disabledContentColor = TextFaint,
-                        ),
-                    ) { Text("Start", fontSize = 14.sp) }
-                    OutlinedButton(
-                        onClick = { viewModel.stop() },
-                        enabled = !state.busy,
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary),
-                    ) { Text("Stop", fontSize = 14.sp) }
-                }
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    when (val s = state.llmState) {
+                        is ServerState.Running -> "running · ${s.model}"
+                        is ServerState.Failed -> s.reason
+                        is ServerState.Starting -> "loading ${s.model}…"
+                        ServerState.Idle -> "stopped"
+                    },
+                    color = TextPrimary,
+                    fontSize = 14.sp,
+                )
             }
 
-            Text(
-                "This build proves the runtime only. The agent — opencode cross-compiled to " +
-                    "arm64 — and the OpenChamber UI are not wired in yet.",
-                color = TextFaint,
-                fontSize = 12.sp,
-            )
+            state.activeModelFile?.let { KeyValue("Model file", it.name) }
+            KeyValue("OpenAI-compatible", "http://127.0.0.1:${LlmServer.PORT}/v1")
+            KeyValue("Ollama facade", "http://127.0.0.1:${OllamaFacade.PORT}")
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = { viewModel.startLlm() },
+                    enabled = state.activeModelFile != null && state.llmState !is ServerState.Running,
+                    colors = ButtonDefaults.buttonColors(containerColor = SurfaceHigh, contentColor = TextPrimary),
+                ) { Text("Start runtime", fontSize = 13.sp) }
+                OutlinedButton(
+                    onClick = { viewModel.stopLlm() },
+                    enabled = state.llmState is ServerState.Running,
+                ) { Text("Stop", fontSize = 13.sp) }
+            }
+
+            if (state.modelsJson.isNotBlank()) {
+                Text("/v1/models", color = TextFaint, fontSize = 11.sp)
+                Mono(state.modelsJson, maxLines = 12)
+            }
+        }
+
+        if (state.availableModels.isNotEmpty()) {
+            SectionCard("Models the agent can see") {
+                state.availableModels.take(20).forEach {
+                    KeyValue(it.providerID, it.modelID)
+                }
+            }
+        }
+
+        if (state.log.isNotEmpty()) {
+            SectionCard("Log") {
+                state.log.take(12).forEach {
+                    Text(it, color = TextFaint, fontSize = 11.sp)
+                }
+            }
         }
     }
-}
-
-@Composable
-private fun Section(title: String, content: @Composable () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(SurfaceHigh, RoundedCornerShape(12.dp))
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(title.uppercase(), color = TextFaint, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-        content()
-    }
-}
-
-@Composable
-private fun KeyValue(key: String, value: String, valueColor: Color = TextSecondary) {
-    Row(Modifier.fillMaxWidth()) {
-        Text(key, color = TextFaint, fontSize = 12.sp, modifier = Modifier.width(120.dp))
-        Text(value, color = valueColor, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-    }
-}
-
-@Composable
-private fun Dot(color: Color) {
-    Spacer(
-        Modifier
-            .background(color, RoundedCornerShape(50))
-            .size(8.dp),
-    )
 }

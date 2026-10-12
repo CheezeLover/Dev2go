@@ -15,26 +15,39 @@ The two riskiest parts are done and measured. See
 [`docs/verified-findings.md`](docs/verified-findings.md) for every claim and the command
 that produced it.
 
-**Working:**
+**Verified working:**
 
+- **The native runtime runs on a real phone.** `libdev2go.so` loads on arm64-v8a and
+  reports `NEON | ARM_FMA | LLAMAFILE | OPENMP | KLEIDIAI | REPACK`, confirming the ARM
+  kernel path the CMakeLists forces is live on device.
 - opencode v2.0.27 cross-compiles to a 192 MB arm64 Android binary
-  (`bun build --compile --target=bun-android-arm64`), linking only libc/libm/libdl.
+  (`bun build --compile --target=bun-android-arm64`), linking only libc/libm/libdl. It ships
+  inside the APK and is extracted on first run.
 - An embedded llama.cpp server binds, serves `/v1/models`, `/props` and
   `/v1/chat/completions`, and returns real generated tokens — proven against a real GGUF by
   `tools/dev2go_probe.cpp`, which links the same library the app does.
-- **A signed, installable release APK builds**, with `libdev2go.so` exporting all four JNI
-  entry points for arm64-v8a and x86_64.
+- A signed release APK builds with the agent bundled: **124 MB**, both ABIs, all four JNI
+  entry points exported.
 
-**What the current APK does:** loads, picks a GGUF from device storage through the Storage
-Access Framework, copies it into app storage, starts the embedded server, and shows what
-`/v1/models` reports. That is a test harness, deliberately — it answers the one question no
-amount of x86-64 testing can, which is whether the runtime works on real phone hardware and
-real phone storage.
+**The app:** three panes — Chat (sessions, messages, reasoning, tool calls, per-turn model
+picker), Models (browse the Ollama registry, download with resume, import a GGUF), and
+Runtime (agent, model runtime and Ollama facade, each startable and stoppable).
 
-**Not yet built:** the OpenChamber UI, the Ollama `/api/*` facade, the model catalog and
-downloader, and the agent process supervisor.
+**How the pieces fit:**
 
-**Unverified:** nothing has run on a physical phone. Every measurement so far is x86-64.
+```
+Compose UI
+   |-- OpencodeClient  --HTTP Basic-->  opencode (bundled arm64 binary)
+   |                                       `-- provider "ondevice" --+
+   `-- OllamaFacade    --HTTP-->  llama.cpp server (embedded, JNI) <-+
+                             /api/tags, /api/show, /api/chat ...
+```
+
+The agent talks to the facade, the facade translates onto llama.cpp's OpenAI-compatible
+routes, and the model runs on the phone. Nothing leaves the device.
+
+**Still unverified:** the agent binary has never been *executed* on a phone — only
+cross-compiled, bundled and exported intact. A full agent turn on hardware is untested.
 
 ## Why it is built this way
 
@@ -95,12 +108,17 @@ LD_LIBRARY_PATH=build/probe/bin build/probe/dev2go_probe <model.gguf> 18080
 Build the APK:
 
 ```bash
-./gradlew :core:test                # catalog and provider-registration tests
+./scripts/build-agent.sh             # optional: cross-compiles the arm64 opencode binary
+./gradlew :core:test                 # catalog and provider-registration tests
 ./gradlew :app:assembleRelease
 ./scripts/sign-test-apk.sh \
     app/build/outputs/apk/release/app-release-unsigned.apk \
     dist/Dev2go-test.apk
 ```
+
+`build-agent.sh` is optional: without `dist/opencode-arm64` the APK still builds and the
+agent can be imported from device storage. With it the app is self-contained at 124 MB
+rather than 43 MB.
 
 The signing key is self-signed and generated on first use. **It is not for distribution** —
 the password lives in the script, so anyone can produce an update the phone will accept.
