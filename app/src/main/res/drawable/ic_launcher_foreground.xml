@@ -1,0 +1,17 @@
+<!--
+  A device outline with a prompt caret: an agent that runs where you hold it. Drawn as a
+  vector rather than shipped as bitmaps so it is sharp at every density and costs no
+  raster assets in the APK.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#6EA8FE"
+        android:pathData="M40,32 h28 a6,6 0 0 1 6,6 v32 a6,6 0 0 1 -6,6 h-28 a6,6 0 0 1 -6,-6 v-32 a6,6 0 0 1 6,-6 z m0,5 a1,1 0 0 0 -1,1 v32 a1,1 0 0 0 1,1 h28 a1,1 0 0 0 1,-1 v-32 a1,1 0 0 0 -1,-1 z" />
+    <path
+        android:fillColor="#6EA8FE"
+        android:pathData="M48,48 h5 v12 h-5 z M48,63 h12 v5 h-12 z" />
+</vector>

@@ -11,6 +11,10 @@ local.properties
 *.aab
 .cxx/
 
+# Build outputs kept for convenience (signed test APKs). Reproducible with
+# ./gradlew :app:assembleRelease && ./scripts/sign-test-apk.sh.
+dist/
+
 # Signing material must never be committed: scripts/sign-test-apk.sh generates a
 # self-signed throwaway key, and a real one does not belong in git either.
 *.jks

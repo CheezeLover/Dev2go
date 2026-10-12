@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      No permissions are declared.
+
+      The GGUF is picked through the Storage Access Framework, which grants access to the
+      single file the user chose without any storage permission. The llama.cpp server binds
+      to 127.0.0.1 only, which needs no permission. Nothing here talks to the network: the
+      model runtime and the opencode agent are both on-device.
+
+      Keeping the manifest free of permissions is also what keeps the app installing
+      cleanly on Chinese OEM builds, which prompt far more eagerly than stock Android for
+      anything non-standard.
+    -->
+
+    <application
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Dev2go">
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.Dev2go">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

@@ -22,8 +22,16 @@ that produced it.
 - An embedded llama.cpp server binds, serves `/v1/models`, `/props` and
   `/v1/chat/completions`, and returns real generated tokens — proven against a real GGUF by
   `tools/dev2go_probe.cpp`, which links the same library the app does.
+- **A signed, installable release APK builds**, with `libdev2go.so` exporting all four JNI
+  entry points for arm64-v8a and x86_64.
 
-**Not yet built:** the Compose UI, the Ollama `/api/*` facade, the model catalog and
+**What the current APK does:** loads, picks a GGUF from device storage through the Storage
+Access Framework, copies it into app storage, starts the embedded server, and shows what
+`/v1/models` reports. That is a test harness, deliberately — it answers the one question no
+amount of x86-64 testing can, which is whether the runtime works on real phone hardware and
+real phone storage.
+
+**Not yet built:** the OpenChamber UI, the Ollama `/api/*` facade, the model catalog and
 downloader, and the agent process supervisor.
 
 **Unverified:** nothing has run on a physical phone. Every measurement so far is x86-64.
@@ -84,7 +92,24 @@ cmake --build build/probe --target dev2go_probe -j
 LD_LIBRARY_PATH=build/probe/bin build/probe/dev2go_probe <model.gguf> 18080
 ```
 
-Build the APK with `./gradlew :app:assembleDebug` once the Kotlin and manifest land.
+Build the APK:
+
+```bash
+./gradlew :core:test                # catalog and provider-registration tests
+./gradlew :app:assembleRelease
+./scripts/sign-test-apk.sh \
+    app/build/outputs/apk/release/app-release-unsigned.apk \
+    dist/Dev2go-test.apk
+```
+
+The signing key is self-signed and generated on first use. **It is not for distribution** —
+the password lives in the script, so anyone can produce an update the phone will accept.
+Set `DEV2GO_KEYSTORE` and `DEV2GO_KEY_PASS` to sign with your own.
+
+## Build requirements
+
+JDK 17+, Android SDK (platform 35, build-tools 35.0.1+), NDK 28.2.13676358, CMake 3.22.1,
+Bun 1.4.3+.
 
 ## Licence
 
