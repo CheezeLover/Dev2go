@@ -1,0 +1,22 @@
+# Fetched by scripts/fetch-llama.sh and scripts/fetch-opencode.sh. Pinned by tag/SHA and
+# checksum-verified, so they are reproducible without being committed.
+app/src/main/cpp/third_party/
+third_party/
+
+# Gradle / Android
+.gradle/
+build/
+local.properties
+*.apk
+*.aab
+.cxx/
+
+# Signing material must never be committed: scripts/sign-test-apk.sh generates a
+# self-signed throwaway key, and a real one does not belong in git either.
+*.jks
+*.keystore
+
+# IDE
+.idea/
+*.iml
+.DS_Store
