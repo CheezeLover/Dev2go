@@ -2,6 +2,7 @@ package com.dev2go.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,13 +28,7 @@ import com.dev2go.agent.AgentState
 import com.dev2go.runtime.LlmServer
 import com.dev2go.runtime.OllamaFacade
 import com.dev2go.runtime.ServerState
-import com.dev2go.ui.theme.Ground
-import com.dev2go.ui.theme.Negative
-import com.dev2go.ui.theme.Positive
-import com.dev2go.ui.theme.SurfaceHigh
-import com.dev2go.ui.theme.TextFaint
-import com.dev2go.ui.theme.TextPrimary
-import com.dev2go.ui.theme.TextSecondary
+import com.dev2go.ui.theme.OpenChamber as OC
 
 /** Where the agent, the model runtime and the Ollama facade each stand. */
 @Composable
@@ -41,35 +36,35 @@ fun RuntimeScreen(viewModel: AppViewModel, state: UiState) {
     Column(
         Modifier
             .fillMaxSize()
-            .background(Ground)
+            .background(OC.Surface)
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         SectionCard("Native runtime") {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                StatusDot(if (viewModel.nativeAvailable) Positive else Negative)
+                StatusDot(if (viewModel.nativeAvailable) OC.Success else OC.Error)
                 Spacer(Modifier.width(8.dp))
                 Text(
                     if (viewModel.nativeAvailable) "libdev2go.so loaded" else "unavailable",
-                    color = TextPrimary,
+                    color = OC.Foreground,
                     fontSize = 14.sp,
                 )
             }
             KeyValue("ABIs", viewModel.abis)
             KeyValue("Threads", LlmServer.recommendedThreads().toString())
             viewModel.backend?.let { KeyValue("llama.cpp", it) }
-            viewModel.nativeError?.let { KeyValue("Error", it, Negative) }
+            viewModel.nativeError?.let { KeyValue("Error", it, OC.Error) }
         }
 
         SectionCard("Agent") {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 StatusDot(
                     when (val a = state.agentState) {
-                        is AgentState.Running -> Positive
-                        is AgentState.Failed -> Negative
-                        is AgentState.Starting -> TextSecondary
-                        AgentState.Absent -> TextFaint
+                        is AgentState.Running -> OC.Success
+                        is AgentState.Failed -> OC.Error
+                        is AgentState.Starting -> OC.ForegroundMuted
+                        AgentState.Absent -> OC.ForegroundMuted
                     }
                 )
                 Spacer(Modifier.width(8.dp))
@@ -80,7 +75,7 @@ fun RuntimeScreen(viewModel: AppViewModel, state: UiState) {
                         is AgentState.Starting -> "starting…"
                         AgentState.Absent -> "stopped"
                     },
-                    color = TextPrimary,
+                    color = OC.Foreground,
                     fontSize = 14.sp,
                 )
             }
@@ -89,7 +84,7 @@ fun RuntimeScreen(viewModel: AppViewModel, state: UiState) {
                 Text(
                     "No opencode binary for this device yet. Build one with scripts/build-agent.sh " +
                         "and install it from the Models tab, or drop opencode-arm64 into the app's files.",
-                    color = TextFaint,
+                    color = OC.ForegroundMuted,
                     fontSize = 11.sp,
                 )
             }
@@ -101,7 +96,7 @@ fun RuntimeScreen(viewModel: AppViewModel, state: UiState) {
                 Button(
                     onClick = { viewModel.startAgent() },
                     enabled = state.agentState !is AgentState.Running && viewModel.agentInstalled,
-                    colors = ButtonDefaults.buttonColors(containerColor = SurfaceHigh, contentColor = TextPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = OC.SurfaceElevated, contentColor = OC.Foreground),
                 ) { Text("Start agent", fontSize = 13.sp) }
                 OutlinedButton(
                     onClick = { viewModel.stopAgent() },
@@ -114,10 +109,10 @@ fun RuntimeScreen(viewModel: AppViewModel, state: UiState) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 StatusDot(
                     when (state.llmState) {
-                        is ServerState.Running -> Positive
-                        is ServerState.Failed -> Negative
-                        is ServerState.Starting -> TextSecondary
-                        ServerState.Idle -> TextFaint
+                        is ServerState.Running -> OC.Success
+                        is ServerState.Failed -> OC.Error
+                        is ServerState.Starting -> OC.ForegroundMuted
+                        ServerState.Idle -> OC.ForegroundMuted
                     }
                 )
                 Spacer(Modifier.width(8.dp))
@@ -128,7 +123,7 @@ fun RuntimeScreen(viewModel: AppViewModel, state: UiState) {
                         is ServerState.Starting -> "loading ${s.model}…"
                         ServerState.Idle -> "stopped"
                     },
-                    color = TextPrimary,
+                    color = OC.Foreground,
                     fontSize = 14.sp,
                 )
             }
@@ -141,7 +136,7 @@ fun RuntimeScreen(viewModel: AppViewModel, state: UiState) {
                 Button(
                     onClick = { viewModel.startLlm() },
                     enabled = state.activeModelFile != null && state.llmState !is ServerState.Running,
-                    colors = ButtonDefaults.buttonColors(containerColor = SurfaceHigh, contentColor = TextPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = OC.SurfaceElevated, contentColor = OC.Foreground),
                 ) { Text("Start runtime", fontSize = 13.sp) }
                 OutlinedButton(
                     onClick = { viewModel.stopLlm() },
@@ -150,8 +145,21 @@ fun RuntimeScreen(viewModel: AppViewModel, state: UiState) {
             }
 
             if (state.modelsJson.isNotBlank()) {
-                Text("/v1/models", color = TextFaint, fontSize = 11.sp)
-                Mono(state.modelsJson, maxLines = 12)
+                Text("/v1/models", color = OC.ForegroundMuted, fontSize = 11.sp)
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(OC.SyntaxBackground, RoundedCornerShape(8.dp))
+                        .padding(10.dp),
+                ) {
+                    Text(
+                        state.modelsJson,
+                        color = OC.ForegroundMuted,
+                        fontSize = 11.sp,
+                        fontFamily = MonoFont,
+                        maxLines = 12,
+                    )
+                }
             }
         }
 
@@ -166,7 +174,7 @@ fun RuntimeScreen(viewModel: AppViewModel, state: UiState) {
         if (state.log.isNotEmpty()) {
             SectionCard("Log") {
                 state.log.take(12).forEach {
-                    Text(it, color = TextFaint, fontSize = 11.sp)
+                    Text(it, color = OC.ForegroundMuted, fontSize = 11.sp)
                 }
             }
         }

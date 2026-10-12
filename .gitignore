@@ -24,3 +24,6 @@ dist/
 .idea/
 *.iml
 .DS_Store
+# OpenChamber's built mobile app, staged by scripts/fetch-openchamber.sh. 24 MB of built
+# JS, reproducible from @openchamber/web@2.3.0.
+app/src/main/assets/openchamber/

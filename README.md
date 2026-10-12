@@ -11,43 +11,70 @@ provider.
 
 ## Status
 
-The two riskiest parts are done and measured. See
-[`docs/verified-findings.md`](docs/verified-findings.md) for every claim and the command
-that produced it.
+See [`docs/verified-findings.md`](docs/verified-findings.md) for every claim and the
+command that produced it.
+
+**The UI is OpenChamber's.** Not a reimplementation — `@openchamber/web@2.3.0`'s own
+mobile app (`mobile.html` -> `renderMobileApp`), served to a WebView from the app's
+loopback HTTP server. OpenChamber already ships a mobile surface, and it is a *direct
+opencode client*: of the 180 `/api` paths the desktop UI calls, the mobile one uses exactly
+two, both `client-auth` pairing. That is the same architecture this app already had, so
+shipping their UI beat rebuilding it.
 
 **Verified working:**
 
-- **The native runtime runs on a real phone.** `libdev2go.so` loads on arm64-v8a and
-  reports `NEON | ARM_FMA | LLAMAFILE | OPENMP | KLEIDIAI | REPACK`, confirming the ARM
-  kernel path the CMakeLists forces is live on device.
-- opencode v2.0.27 cross-compiles to a 192 MB arm64 Android binary
-  (`bun build --compile --target=bun-android-arm64`), linking only libc/libm/libdl. It ships
-  inside the APK and is extracted on first run.
-- An embedded llama.cpp server binds, serves `/v1/models`, `/props` and
-  `/v1/chat/completions`, and returns real generated tokens — proven against a real GGUF by
-  `tools/dev2go_probe.cpp`, which links the same library the app does.
-- A signed release APK builds with the agent bundled: **124 MB**, both ABIs, all four JNI
-  entry points exported.
-
-**The app:** three panes — Chat (sessions, messages, reasoning, tool calls, per-turn model
-picker), Models (browse the Ollama registry, download with resume, import a GGUF), and
-Runtime (agent, model runtime and Ollama facade, each startable and stoppable).
+- **The native runtime runs on a real phone** — `libdev2go.so` loads on arm64-v8a and
+  reports `NEON | ARM_FMA | LLAMAFILE | OPENMP | KLEIDIAI | REPACK`.
+- opencode v2.0.27 cross-compiles to a 192 MB arm64 Android binary, shipped in the APK.
+- An embedded llama.cpp server binds and serves `/v1/models`, `/props` and
+  `/v1/chat/completions`, proven against a real GGUF by `tools/dev2go_probe.cpp`.
+- Signed release APK with OpenChamber's UI, the agent and the runtime bundled: **130 MB**.
 
 **How the pieces fit:**
 
 ```
-Compose UI
-   |-- OpencodeClient  --HTTP Basic-->  opencode (bundled arm64 binary)
-   |                                       `-- provider "ondevice" --+
-   `-- OllamaFacade    --HTTP-->  llama.cpp server (embedded, JNI) <-+
-                             /api/tags, /api/show, /api/chat ...
+WebView --> WebUiServer --static--> OpenChamber mobile app (313 assets, 24 MB)
+    |            |-- /api/client-auth/pairing/redeem --> { clientToken: <password> }
+    |            `-- /d2go/{roots,list,read,write}   --> PhoneStorage
+    |
+    `-- direct, Basic auth --> opencode (bundled arm64 binary)
+                                   `-- provider "ondevice" --> OllamaFacade --> llama.cpp
 ```
 
-The agent talks to the facade, the facade translates onto llama.cpp's OpenAI-compatible
-routes, and the model runs on the phone. Nothing leaves the device.
+Nothing is proxied to opencode: it serves its own API with CORS open, so the app's calls —
+including the long-lived `/api/event` SSE stream — go straight there. Only the two pairing
+endpoints are answered locally.
 
-**Still unverified:** the agent binary has never been *executed* on a phone — only
-cross-compiled, bundled and exported intact. A full agent turn on hardware is untested.
+**One patch to the bundle:** OpenChamber sends its client token as `Authorization: Bearer`,
+but opencode's auth middleware accepts **only** Basic — verified against a live server,
+Bearer returns 401 and Basic returns 200. `scripts/patch-openchamber-auth.mjs` rewrites the
+header expression at build time. Patching beats proxying precisely because a proxy would
+have to re-stream SSE, which the loopback server here does not do.
+
+**Still unverified:** the whole thing has not been run on a phone. The agent binary has been
+cross-compiled and bundled but never executed on hardware, and OpenChamber's UI has never
+been loaded from the app's own assets.
+
+## Phone files
+
+The UI is a web app with a browser filesystem model, so the only way it can read a file is
+over HTTP. `WebUiServer` exposes two roots:
+
+- **The workspace** — the app's own directory, which is also opencode's working directory.
+  Everything the agent writes lands here.
+- **Mounted trees** — real phone storage via the Storage Access Framework. Grants are
+  persisted with `takePersistableUriPermission`, otherwise every mount silently becomes
+  unreadable after the app restarts.
+
+```bash
+curl http://127.0.0.1:18080/d2go/roots
+curl 'http://127.0.0.1:18080/d2go/list?path=/'
+curl 'http://127.0.0.1:18080/d2go/read?path=/notes.md'
+```
+
+Every path is canonicalised and checked to sit under a declared root before it is opened.
+Without that, `../../databases/x.db` would hand the web UI an arbitrary-file-read primitive
+on the device — and the UI is remote JavaScript.
 
 ## Why it is built this way
 
