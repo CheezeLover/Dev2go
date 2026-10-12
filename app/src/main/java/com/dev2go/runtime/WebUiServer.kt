@@ -136,10 +136,83 @@ class WebUiServer(
 
     // ---- static ----
 
+    /**
+     * Serves `mobile.html` with a bootstrap script injected ahead of the app's own.
+     *
+     * The injected script pre-seeds the app's saved-connection list in localStorage so it
+     * connects straight to the on-device opencode instead of asking the user to pair. That
+     * sidesteps OpenChamber's pairing machinery entirely, which is a state machine built
+     * around connecting to an *OpenChamber server* — it has a serverId, relay candidates
+     * and LAN discovery behind `connection/candidates`, not a simple list.
+     *
+     * Injecting into the document beats calling `evaluateJavascript` after load: the app
+     * reads localStorage during its first module evaluation, so anything run afterwards
+     * arrives a tick too late.
+     */
     private fun document(): LoopbackHttpServer.Response {
-        val html = readAsset("$ASSET_ROOT/mobile.html") ?: return notFound()
-        return LoopbackHttpServer.Response(200, String(html, Charsets.UTF_8), "text/html; charset=utf-8")
+        val html = readAsset("$ASSET_ROOT/mobile.html")?.let { String(it, Charsets.UTF_8) }
+            ?: return notFound()
+        return LoopbackHttpServer.Response(
+            200,
+            html.replace("<head>", "<head>\n$BOOTSTRAP"),
+            "text/html; charset=utf-8",
+        )
     }
+
+    /**
+     * Pre-seeds the connection and reports page errors back to logcat.
+     *
+     * The error reporting is not decoration. Without a WebChromeClient the page's
+     * `console.error` and uncaught exceptions go nowhere, so a white screen and a missing
+     * provider look identical from outside the app — which is exactly the situation that
+     * produced the last round of guesswork.
+     */
+    private val bootstrap: String
+        get() = """
+<script>
+(function () {
+  // Pre-seed the saved connection. Shape recovered from the mobile bundle:
+  //   localStorage["openchamber.mobile.connections.v1"] = [{ id, label, candidates, clientToken }]
+  //   candidates: [{ kind: "direct", url }]
+  try {
+    var KEY = "openchamber.mobile.connections.v1";
+    var seed = [{
+      id: "dev2go",
+      label: "dev2go on-device",
+      candidates: [{ kind: "direct", url: ${q(agent.baseUrl)} }],
+      clientToken: ${q(agent.password)}
+    }];
+    var existing = [];
+    try { existing = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (e) {}
+    if (!Array.isArray(existing)) existing = [];
+    var kept = existing.filter(function (c) { return c && c.id !== "dev2go"; });
+    localStorage.setItem(KEY, JSON.stringify(seed.concat(kept)));
+
+    // Some builds read this too.
+    localStorage.setItem("openchamber.mobile.server", ${q(agent.baseUrl)});
+    localStorage.setItem("openchamber.mobile.token", ${q(agent.password)});
+  } catch (e) {
+    console.error("[dev2go] connection seed failed", e);
+  }
+
+  window.__dev2goErrors = [];
+  window.addEventListener("error", function (e) {
+    var line = "[dev2go] error: " + (e.message || "unknown") +
+      (e.filename ? " @ " + e.filename + ":" + e.lineno : "");
+    window.__dev2goErrors.push(line);
+    console.error(line);
+  });
+  window.addEventListener("unhandledrejection", function (e) {
+    var line = "[dev2go] unhandled rejection: " + (e.reason && e.reason.message ? e.reason.message : e.reason);
+    window.__dev2goErrors.push(line);
+    console.error(line);
+  });
+  console.log("[dev2go] bootstrap ok, agent at ${q(agent.baseUrl)}");
+})();
+</script>
+""".trimIndent()
+
+    private val BOOTSTRAP: String get() = bootstrap
 
     /**
      * Streams one asset.

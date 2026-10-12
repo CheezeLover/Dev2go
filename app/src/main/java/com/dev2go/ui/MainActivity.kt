@@ -12,6 +12,8 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
@@ -135,6 +137,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun configure(view: WebView) {
+        // Popups are rendered into a FrameLayout sized to this.
         view.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -160,6 +163,39 @@ class MainActivity : ComponentActivity() {
         )
 
         CookieManager.getInstance().setAcceptThirdPartyCookies(view, true)
+
+        // Without a WebChromeClient the page's console output and uncaught exceptions go
+        // nowhere, so a white screen and a missing provider are indistinguishable from
+        // outside the app. This is what turned the last bug into guesswork.
+        view.webChromeClient = object : android.webkit.WebChromeClient() {
+            override fun onConsoleMessage(msg: android.webkit.ConsoleMessage): Boolean {
+                Log.i("Dev2go/WebView", "${msg.messageLevel()} ${msg.message()} @${msg.lineNumber()}")
+                return true
+            }
+
+            // The UI opens the command palette and diff views as popups; without this they
+            // are silently dropped. The Message argument is mandatory — the WebView
+            // delivers the new WebView through it.
+            @Suppress("DEPRECATION")
+            override fun onCreateWindow(
+                view: WebView,
+                isDialog: Boolean,
+                isUserGesture: Boolean,
+                resultMsg: android.os.Message,
+            ): Boolean {
+                val popup = WebView(view.context)
+                configure(popup)
+                val container = FrameLayout(view.context)
+                container.addView(popup, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                val dialog = android.app.Dialog(view.context)
+                dialog.setContentView(container)
+                dialog.setOnDismissListener { popup.destroy() }
+                dialog.show()
+                (resultMsg.obj as WebView.WebViewTransport?)?.setWebView(popup)
+                resultMsg.sendToTarget()
+                return true
+            }
+        }
 
         view.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean {
